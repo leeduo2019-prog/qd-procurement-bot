@@ -250,8 +250,7 @@ class ProcurementCrawler:
         chrome_options.add_experimental_option("useAutomationExtension", False)
 
         try:
-            # GitHub Actions / Linux: use system Chrome directly
-            chrome_options.binary_location = "/usr/bin/google-chrome"
+            # Automatically detect system Chrome
             self.driver = webdriver.Chrome(options=chrome_options)
             self.driver.set_page_load_timeout(30)
             
