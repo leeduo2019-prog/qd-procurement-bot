@@ -1,0 +1,48 @@
+name: Procurement Crawler
+
+permissions:
+  contents: write
+
+on:
+  schedule:
+    # 每天北京时间 09:00 和 18:00 运行
+    - cron: '0 1 * * *'
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    
+    env:
+      DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+      DINGTALK_SECRET: ${{ secrets.DINGTALK_SECRET }}
+      KEYWORDS: ${{ secrets.KEYWORDS }}
+      AREA_TYPE: ${{ secrets.AREA_TYPE }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Crawler
+        run: |
+          python main.py
+
+      - name: Commit and push database & results
+        if: always()
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add notices.db *.json *.csv
+          git diff --staged --quiet || git commit -m "🤖 Auto update crawler data $(date -u)"
+          git push origin main

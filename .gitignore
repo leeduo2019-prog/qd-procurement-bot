@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# Logs
+logs/
+*.log
+
+# Local env (DO NOT commit secrets)
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug
+debug_page.html
