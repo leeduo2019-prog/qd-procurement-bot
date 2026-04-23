@@ -34,6 +34,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Setup Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
       - name: Run Crawler
         run: |
           python main.py
@@ -43,6 +48,8 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add notices.db *.json *.csv
+          # 使用 || true 防止文件不存在时导致步骤失败
+          git add notices.db || true
+          git add *.json *.csv || true
           git diff --staged --quiet || git commit -m "🤖 Auto update crawler data $(date -u)"
           git push origin main
