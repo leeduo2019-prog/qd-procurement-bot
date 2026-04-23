@@ -5,9 +5,9 @@ permissions:
 
 on:
   schedule:
-    # 每天北京时间 09:00 和 18:00 运行
-    - cron: '0 1 * * *'
-    - cron: '0 10 * * *'
+    # 每天北京时间 08:30 和 16:00 运行
+    - cron: '30 0 * * *'
+    - cron: '0 8 * * *'
   workflow_dispatch:
 
 jobs:
@@ -43,7 +43,6 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          # 使用 || true 防止文件不存在时导致步骤失败
           git add notices.db || true
           git add *.json *.csv || true
           git diff --staged --quiet || git commit -m "🤖 Auto update crawler data $(date -u)"
