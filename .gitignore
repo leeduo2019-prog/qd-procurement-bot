@@ -34,7 +34,6 @@ procurement_notices_*.csv
 *.log
 
 # 数据库和调试产物
-notices.db
 debug_page.html
 logs/
 *.log.*
