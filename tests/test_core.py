@@ -19,6 +19,7 @@ os.environ.setdefault("DINGTALK_WEBHOOK", "")
 os.environ.setdefault("DINGTALK_SECRET", "")
 
 from crawler import ProcurementCrawler, NoticeStore
+from notice_parser import is_valid_notice, parse_notice
 from dingtalk_notifier import DingTalkNotifier
 
 
@@ -80,23 +81,23 @@ class TestNoticeValidation:
     """Test _is_valid_notice static method."""
 
     def test_valid_procurement_title(self):
-        assert ProcurementCrawler._is_valid_notice("青岛市财政局预算绩效评价项目招标公告") is True
+        assert is_valid_notice("青岛市财政局预算绩效评价项目招标公告") is True
 
     def test_valid_with_keywords(self):
-        assert ProcurementCrawler._is_valid_notice("某项目造价咨询服务采购公告") is True
-        assert ProcurementCrawler._is_valid_notice("某项目中标结果公告") is True
-        assert ProcurementCrawler._is_valid_notice("竞争性磋商公告") is True
+        assert is_valid_notice("某项目造价咨询服务采购公告") is True
+        assert is_valid_notice("某项目中标结果公告") is True
+        assert is_valid_notice("竞争性磋商公告") is True
 
     def test_invalid_navigation_titles(self):
-        assert ProcurementCrawler._is_valid_notice("首页") is False
-        assert ProcurementCrawler._is_valid_notice("关于我们") is False
-        assert ProcurementCrawler._is_valid_notice("登录") is False
-        assert ProcurementCrawler._is_valid_notice("下一页") is False
-        assert ProcurementCrawler._is_valid_notice("网站地图") is False
+        assert is_valid_notice("首页") is False
+        assert is_valid_notice("关于我们") is False
+        assert is_valid_notice("登录") is False
+        assert is_valid_notice("下一页") is False
+        assert is_valid_notice("网站地图") is False
 
     def test_invalid_generic_titles(self):
-        assert ProcurementCrawler._is_valid_notice("联系我们") is False
-        assert ProcurementCrawler._is_valid_notice("帮助中心") is False
+        assert is_valid_notice("联系我们") is False
+        assert is_valid_notice("帮助中心") is False
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +117,7 @@ class TestParseNotice:
         </li>
         """
         container = BeautifulSoup(html, "html.parser").find("li")
-        result = ProcurementCrawler._parse_notice(container)
+        result = parse_notice(container)
         assert result is not None
         assert "造价咨询" in result["title"]
         assert result["publish_date"] == "2026-06-10"
@@ -132,8 +133,8 @@ class TestParseNotice:
         </li>
         """
         container = BeautifulSoup(html, "html.parser").find("li")
-        result = ProcurementCrawler._parse_notice(container)
-        assert result["link"].startswith("http://zfcg.qingdao.gov.cn")
+        result = parse_notice(container)
+        assert result["link"].startswith("https://zfcg.qingdao.gov.cn")
 
     def test_parse_absolute_link_preserved(self):
         html = """
@@ -145,19 +146,19 @@ class TestParseNotice:
         </li>
         """
         container = BeautifulSoup(html, "html.parser").find("li")
-        result = ProcurementCrawler._parse_notice(container)
+        result = parse_notice(container)
         assert result["link"] == "http://example.com/notice"
 
     def test_parse_short_title_returns_none(self):
         html = '<li><span class="datelink1_n"><a href="/x">短标题</a></span></li>'
         container = BeautifulSoup(html, "html.parser").find("li")
-        result = ProcurementCrawler._parse_notice(container)
+        result = parse_notice(container)
         assert result is None
 
     def test_parse_no_link_returns_none_or_fallback(self):
         html = '<li><span>无链接的文本</span></li>'
         container = BeautifulSoup(html, "html.parser").find("li")
-        result = ProcurementCrawler._parse_notice(container)
+        result = parse_notice(container)
         # Either None (no <a> tag) or valid dict with extracted text
         if result is not None:
             assert "title" in result
@@ -172,7 +173,7 @@ class TestParseNotice:
         </li>
         """
         container = BeautifulSoup(html, "html.parser").find("li")
-        result = ProcurementCrawler._parse_notice(container)
+        result = parse_notice(container)
         if result:
             assert "2026-06-08" in result.get("publish_date", "")
 
@@ -188,6 +189,7 @@ class TestNoticeStore:
         tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         tmp.close()
         store = NoticeStore(db_path=tmp.name)
+        self._tmp_path = tmp.name
         return store, tmp.name
 
     def test_insert_and_exists(self):
@@ -235,7 +237,8 @@ class TestNoticeStore:
         assert nid in recent
 
     def teardown_method(self):
-        pass
+        if hasattr(self, '_tmp_path') and os.path.exists(self._tmp_path):
+            os.unlink(self._tmp_path)
 
 
 # ---------------------------------------------------------------------------

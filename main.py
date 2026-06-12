@@ -27,9 +27,10 @@ def main():
 
     # 从环境变量读取区域类型（默认 all）
     area_type = os.getenv("AREA_TYPE", "all")
+    days_back = int(os.getenv("DAYS_BACK", "2"))
 
     try:
-        crawler = ProcurementCrawler(area_type=area_type)
+        crawler = ProcurementCrawler(area_type=area_type, days_back=days_back)
         results = crawler.crawl(max_pages=5)
 
         logger.info("找到 %d 条新匹配公告", len(results))

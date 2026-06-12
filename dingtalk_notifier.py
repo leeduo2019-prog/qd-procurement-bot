@@ -134,7 +134,10 @@ class DingTalkNotifier:
     def _generate_markdown(self, notices: List[Dict], subject: str) -> str:
         """生成钉钉 Markdown 消息内容"""
         date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        keywords_str = os.getenv("KEYWORDS", "造价，审计，预算，决算，结算")
+        # Use same separator logic as crawler
+        keywords_raw = os.getenv("KEYWORDS", "造价，审计，预算，决算，结算")
+        keywords_list = [kw.strip() for kw in re.split(r"[,，]", keywords_raw) if kw.strip()]
+        keywords_str = "、".join(keywords_list)
 
         if not notices:
             # 无公告时的简洁模板
