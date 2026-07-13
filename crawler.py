@@ -1,12 +1,14 @@
 """
 青岛政府采购爬虫
-抓取涉及造价、审计、预算、决算、结算的采购公告
+通过后端 API 抓取涉及造价、审计、预算、决算、结算的采购公告,并推送到钉钉群。
 
-v2.1 - 模块化重构：
-- 拆分为 store / browser / parser 三个子模块
-- WebDriverWait 替代硬编码 sleep
-- 统一 HTTPS 协议
-- 控制台日志级别 INFO
+v3.0 - 改用直接 API 调用替代 Selenium:
+- 不再依赖浏览器,直接 POST /api/siteservice/free/qd/site-info/page(见 api_client)
+- 按发布日期降序(-pdate)分页,遇到早于 cutoff 的记录停止翻页
+- colCode=0303(采购公告)为默认分类,可在 COL_CODES 扩展
+
+旧版基于 Selenium + BeautifulSoup 解析 DOM 的方案已移除:
+网站是 Vue SPA,真实数据来自后端 API,旧选择器(ul.list_right_n 等)已失效。
 """
 
 import os
@@ -15,20 +17,11 @@ import csv
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import List, Dict
-
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, WebDriverException
-from bs4 import BeautifulSoup
+from typing import List, Dict, Optional, Tuple
 
 from store import NoticeStore
-from browser import (
-    setup_driver, close_driver, switch_to_tab,
-    has_next_page, go_to_next_page, click_procurement_notice_tab,
-)
-from notice_parser import extract_notices
+from api_client import fetch_page
+from notice_parser import parse_api_record
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -40,13 +33,11 @@ os.makedirs(LOG_DIR, exist_ok=True)
 logger = logging.getLogger("qd_crawler")
 logger.setLevel(logging.DEBUG)
 
-# Console: INFO level for production
 _console = logging.StreamHandler()
 _console.setLevel(logging.INFO)
 _console.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s %(message)s", "%Y-%m-%d %H:%M:%S"))
 logger.addHandler(_console)
 
-# File: DEBUG level with daily rotation, keep 30 days
 from logging.handlers import TimedRotatingFileHandler
 
 _file = TimedRotatingFileHandler(
@@ -64,17 +55,27 @@ logger.addHandler(_file)
 # Crawler
 # ---------------------------------------------------------------------------
 
-class ProcurementCrawler:
-    """政府采购爬虫 — 编排爬取流程。"""
+# 采购公告分类码。如需覆盖中标/更正/废标,在此追加 "0304"/"0305"/"0306"。
+COL_CODES: List[str] = ["0303"]
 
-    BASE_URL = "https://zfcg.qingdao.gov.cn/qdsite/#/site-list-varied?colCode=04"
+# area_type 配置 -> [(api_area_type, area, 标签名), ...]
+#   city   -> 市级公告(areaType="city", area=None)
+#   county -> 各区市公告(areaType="county", area=None 拉全部区市)
+AREA_TARGETS: Dict[str, List[Tuple[str, Optional[str], str]]] = {
+    "all": [("city", None, "青岛市"), ("county", None, "各区市")],
+    "qingdao": [("city", None, "青岛市")],
+    "districts": [("county", None, "各区市")],
+}
+
+
+class ProcurementCrawler:
+    """政府采购爬虫 - 通过后端 API 编排抓取流程。"""
 
     def __init__(self, area_type: str = "all", days_back: int = 2, max_pages: int = 5):
         self.area_type = area_type
         self.days_back = days_back
         self.max_pages = max_pages
         self.keywords = self._load_keywords()
-        self.driver = None
         self.results: List[Dict] = []
         self.store = NoticeStore()
         self.cutoff_date = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
@@ -89,121 +90,83 @@ class ProcurementCrawler:
     def _get_matched_keywords(self, title: str) -> List[str]:
         return [kw for kw in self.keywords if kw in title]
 
-    def crawl(self, max_pages: int = 5) -> List[Dict]:
+    def crawl(self, max_pages: int = None) -> List[Dict]:
         if max_pages is None:
             max_pages = self.max_pages
         logger.info("=" * 60)
         logger.info("青岛政府采购爬虫 - 自动运行")
         logger.info("=" * 60)
         logger.info("关键词: %s", ", ".join(self.keywords))
+        logger.info("分类码: %s", ", ".join(COL_CODES))
         logger.info("最大页数: %d", max_pages)
         logger.info("区域类型: %s", self.area_type)
         logger.info("日期范围: %s 至今（最近 %d 天）", self.cutoff_date, self.days_back)
 
-        self.driver = setup_driver()
+        targets = AREA_TARGETS.get(self.area_type, AREA_TARGETS["all"])
         matched_notices: List[Dict] = []
         duplicate_count = 0
 
         try:
-            tabs_to_crawl = []
-            if self.area_type == "all":
-                tabs_to_crawl = [("qingdao", "青岛市"), ("districts", "各区市")]
-            elif self.area_type == "districts":
-                tabs_to_crawl = [("districts", "各区市")]
-            else:
-                tabs_to_crawl = [("qingdao", "青岛市")]
+            for col_code in COL_CODES:
+                for area_type, area, area_name in targets:
+                    logger.info(">> 分类 %s 区域【%s】", col_code, area_name)
+                    for page in range(1, max_pages + 1):
+                        try:
+                            result = fetch_page(
+                                col_code, area_type, area=area, page=page
+                            )
+                        except Exception as e:
+                            logger.error("  第 %d 页抓取失败,停止该目标: %s", page, e)
+                            break
 
-            try:
-                if self.driver is None:
-                    raise RuntimeError("浏览器驱动未初始化")
-                logger.debug("正在访问 URL: %s", self.BASE_URL)
-                self.driver.get(self.BASE_URL)
-                WebDriverWait(self.driver, 15).until(
-                    EC.presence_of_element_located((By.TAG_NAME, "body"))
-                )
-                # Wait for SPA Vue.js to render initial content
-                WebDriverWait(self.driver, 15).until(
-                    EC.presence_of_element_located(
-                        (By.CSS_SELECTOR, "ul.list_right_n, .list-box, .notice-list")
-                    )
-                )
+                        records = result["records"]
+                        if not records:
+                            logger.info("  第 %d 页无更多公告", page)
+                            break
 
-                click_procurement_notice_tab(self.driver)
-            except TimeoutException:
-                logger.error("页面加载超时")
-                return matched_notices
-            except WebDriverException as e:
-                logger.error("页面加载失败: %s", e)
-                return matched_notices
+                        logger.info("  第 %d 页获取 %d 条", page, len(records))
 
-            for tab_area, tab_name in tabs_to_crawl:
-                logger.info(">> 开始爬取【%s】标签页", tab_name)
-                current_area = tab_area
-
-                if tab_name != "青岛市":
-                    if not switch_to_tab(self.driver, tab_name):
-                        logger.warning("  无法切换到 '%s' 标签页，跳过", tab_name)
-                        continue
-
-                for page in range(1, max_pages + 1):
-                    logger.info("  爬取第 %d 页...", page)
-
-                    html = self.driver.page_source
-                    logger.debug("页面 HTML 长度: %d", len(html))
-
-                    soup = BeautifulSoup(html, "html.parser")
-                    notices = extract_notices(soup)
-
-                    if not notices:
-                        logger.info("  第 %d 页未找到公告，可能已到达最后一页", page)
-                        break
-
-                    logger.info("  第 %d 页找到 %d 条公告", page, len(notices))
-
-                    for notice in notices:
-                        notice_date = notice.get("publish_date", "")
-                        if notice_date and notice_date < self.cutoff_date:
-                            logger.debug("  跳过过期公告: %s [%s]", notice["title"][:30], notice_date)
-                            continue
-
-                        if self._match_keywords(notice.get("title", "")):
-                            if self.store.exists(
-                                notice.get("title", ""), notice.get("publish_date", "")
-                            ):
-                                duplicate_count += 1
+                        # records 按 -pdate 降序;遇到早于 cutoff 的即停止翻页
+                        stop_paging = False
+                        for rec in records:
+                            notice = parse_api_record(rec)
+                            if not notice:
                                 continue
+                            pdate = notice["publish_date"]
+                            if pdate and pdate < self.cutoff_date:
+                                logger.debug("  到达日期截止线: %s [%s]", notice["title"][:30], pdate)
+                                stop_paging = True
+                                break
 
-                            matched = notice.copy()
-                            matched["matched_keywords"] = self._get_matched_keywords(
-                                notice["title"]
-                            )
-                            matched["area_type"] = current_area
-                            matched_notices.append(matched)
-                            self.store.insert(matched)
-                            logger.info(
-                                "  ✓ 匹配: %s... [%s]",
-                                notice["title"][:50],
-                                ", ".join(matched["matched_keywords"]),
-                            )
+                            if self._match_keywords(notice["title"]):
+                                if self.store.exists(
+                                    notice["title"], notice["publish_date"]
+                                ):
+                                    duplicate_count += 1
+                                    continue
 
-                    if not has_next_page(self.driver):
-                        logger.info("  没有更多页面了")
-                        break
+                                notice["matched_keywords"] = self._get_matched_keywords(
+                                    notice["title"]
+                                )
+                                notice["area_type"] = area_type
+                                matched_notices.append(notice)
+                                self.store.insert(notice)
+                                logger.info(
+                                    "  ✓ 匹配: %s... [%s]",
+                                    notice["title"][:50],
+                                    ", ".join(notice["matched_keywords"]),
+                                )
 
-                    logger.info("  点击下一页...")
-                    if not go_to_next_page(self.driver):
-                        logger.info("  翻页失败，停止当前标签页爬取")
-                        break
+                        if stop_paging:
+                            logger.info("  已达日期截止线,停止翻页")
+                            break
 
-                logger.info(">> 【%s】标签页爬取完成", tab_name)
+                    logger.info(">> 区域【%s】完成", area_name)
 
         except KeyboardInterrupt:
             logger.info("用户中断爬取")
         except Exception as e:
             logger.error("爬取过程中出错: %s", e, exc_info=True)
-        finally:
-            close_driver(self.driver)
-            self.driver = None
 
         self.results = matched_notices
         logger.info("=" * 60)

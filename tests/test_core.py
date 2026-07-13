@@ -11,7 +11,6 @@ import tempfile
 import pytest
 from datetime import datetime
 from unittest.mock import patch
-from bs4 import BeautifulSoup, Tag
 
 # Ensure .env is not loaded during tests
 os.environ.setdefault("KEYWORDS", "造价,审计,预算,决算,结算")
@@ -19,7 +18,6 @@ os.environ.setdefault("DINGTALK_WEBHOOK", "")
 os.environ.setdefault("DINGTALK_SECRET", "")
 
 from crawler import ProcurementCrawler, NoticeStore
-from notice_parser import is_valid_notice, parse_notice
 from dingtalk_notifier import DingTalkNotifier
 
 
@@ -71,111 +69,6 @@ class TestKeywordMatching:
         c.keywords = ["造价", "审计", "预算"]
         result = c._get_matched_keywords("青岛市造价及审计服务采购")
         assert result == ["造价", "审计"]
-
-
-# ---------------------------------------------------------------------------
-# Notice validation
-# ---------------------------------------------------------------------------
-
-class TestNoticeValidation:
-    """Test _is_valid_notice static method."""
-
-    def test_valid_procurement_title(self):
-        assert is_valid_notice("青岛市财政局预算绩效评价项目招标公告") is True
-
-    def test_valid_with_keywords(self):
-        assert is_valid_notice("某项目造价咨询服务采购公告") is True
-        assert is_valid_notice("某项目中标结果公告") is True
-        assert is_valid_notice("竞争性磋商公告") is True
-
-    def test_invalid_navigation_titles(self):
-        assert is_valid_notice("首页") is False
-        assert is_valid_notice("关于我们") is False
-        assert is_valid_notice("登录") is False
-        assert is_valid_notice("下一页") is False
-        assert is_valid_notice("网站地图") is False
-
-    def test_invalid_generic_titles(self):
-        assert is_valid_notice("联系我们") is False
-        assert is_valid_notice("帮助中心") is False
-
-
-# ---------------------------------------------------------------------------
-# Notice parsing
-# ---------------------------------------------------------------------------
-
-class TestParseNotice:
-    """Test _parse_notice static method with real HTML fragments."""
-
-    def test_parse_standard_structure(self):
-        html = """
-        <li>
-            <span class="datelink1_n">
-                <a href="/qdsite/notice/123">青岛市某项目造价咨询服务采购公告</a>
-                <span class="date_new">2026-06-10</span>
-            </span>
-        </li>
-        """
-        container = BeautifulSoup(html, "html.parser").find("li")
-        result = parse_notice(container)
-        assert result is not None
-        assert "造价咨询" in result["title"]
-        assert result["publish_date"] == "2026-06-10"
-        assert "http" in result["link"]
-
-    def test_parse_relative_link_gets_prefixed(self):
-        html = """
-        <li>
-            <span class="datelink1_n">
-                <a href="/qdsite/notice/456">某项目公开招标公告</a>
-                <span class="date_new">2026-06-09</span>
-            </span>
-        </li>
-        """
-        container = BeautifulSoup(html, "html.parser").find("li")
-        result = parse_notice(container)
-        assert result["link"].startswith("https://zfcg.qingdao.gov.cn")
-
-    def test_parse_absolute_link_preserved(self):
-        html = """
-        <li>
-            <span class="datelink1_n">
-                <a href="http://example.com/notice">某项目公开招标公告</a>
-                <span class="date_new">2026-06-09</span>
-            </span>
-        </li>
-        """
-        container = BeautifulSoup(html, "html.parser").find("li")
-        result = parse_notice(container)
-        assert result["link"] == "http://example.com/notice"
-
-    def test_parse_short_title_returns_none(self):
-        html = '<li><span class="datelink1_n"><a href="/x">短标题</a></span></li>'
-        container = BeautifulSoup(html, "html.parser").find("li")
-        result = parse_notice(container)
-        assert result is None
-
-    def test_parse_no_link_returns_none_or_fallback(self):
-        html = '<li><span>无链接的文本</span></li>'
-        container = BeautifulSoup(html, "html.parser").find("li")
-        result = parse_notice(container)
-        # Either None (no <a> tag) or valid dict with extracted text
-        if result is not None:
-            assert "title" in result
-
-    def test_parse_date_from_regex_fallback(self):
-        html = """
-        <li>
-            <span class="datelink1_n">
-                <a href="/notice/789">某项目预算审核服务采购公告</a>
-            </span>
-            <span>发布日期：2026-06-08</span>
-        </li>
-        """
-        container = BeautifulSoup(html, "html.parser").find("li")
-        result = parse_notice(container)
-        if result:
-            assert "2026-06-08" in result.get("publish_date", "")
 
 
 # ---------------------------------------------------------------------------
