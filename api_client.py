@@ -22,6 +22,17 @@ PAGE_ENDPOINT = "/api/siteservice/free/qd/site-info/page"
 MAX_LIMIT = 15  # 服务端硬上限:limit>15 仍只返回 15 条
 DEFAULT_TIMEOUT = 20
 
+# 服务端 WAF 会 403 默认的 python-requests UA,必须伪装浏览器。
+DEFAULT_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/131.0.0.0 Safari/537.36"
+    ),
+    "Referer": "http://zfcg.qingdao.gov.cn/qdsite/",
+    "Content-Type": "application/json",
+}
+
 
 def fetch_page(
     col_code: str,
@@ -72,7 +83,7 @@ def fetch_page(
         url,
         json=payload,
         timeout=DEFAULT_TIMEOUT,
-        headers={"Referer": "http://zfcg.qingdao.gov.cn/qdsite/"},
+        headers=DEFAULT_HEADERS,
     )
     resp.raise_for_status()
     data = resp.json().get("data", {})

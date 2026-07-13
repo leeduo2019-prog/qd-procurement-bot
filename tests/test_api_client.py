@@ -69,6 +69,16 @@ class TestFetchPageRequest:
         payload = mock_post.call_args.kwargs["json"]
         assert payload["limit"] == api_client.MAX_LIMIT
 
+    @patch("api_client.requests.post")
+    def test_sends_browser_user_agent(self, mock_post):
+        """Server WAF 403s the default python-requests UA."""
+        mock_post.return_value = _make_response(_load_fixture())
+        api_client.fetch_page("0303", "city")
+        headers = mock_post.call_args.kwargs.get("headers", {})
+        ua = headers.get("User-Agent", "")
+        assert "python-requests" not in ua
+        assert "Mozilla" in ua
+
 
 class TestFetchPageResponse:
     """Verify response parsing."""
