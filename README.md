@@ -85,6 +85,9 @@ python main.py
 
 ## 📅 定时任务配置
 
+> **为什么不用 GitHub Actions?** 目标站点后端 API (`http://zfcg.qingdao.gov.cn:58060`) 仅在中国境内可达,
+> GitHub Actions 的 runner 位于美国 Azure,无法建立 TCP 连接。推荐在**本地机器**(中国境内)配置定时任务。
+
 ### Windows 系统
 
 #### 方法一：使用一键部署脚本（最简单）

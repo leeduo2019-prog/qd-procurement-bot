@@ -3,11 +3,10 @@ name: Procurement Crawler
 permissions:
   contents: read
 
+# 调度已移除:目标站点 API (http://zfcg.qingdao.gov.cn:58060) 仅在中国境内可达,
+# GitHub Actions 的 US runner 无法建立 TCP 连接。改用本地 cron 运行 main.py。
+# 保留 workflow_dispatch 供手动触发(自托管中国 runner / 测试用)。
 on:
-  schedule:
-    # 每天北京时间 08:30 和 16:00 运行
-    - cron: '30 0 * * *'
-    - cron: '0 8 * * *'
   workflow_dispatch:
 
 jobs:
