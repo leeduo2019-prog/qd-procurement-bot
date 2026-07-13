@@ -158,19 +158,9 @@ sudo apt install -y python3 python3-pip python3-venv
 sudo yum install -y python3 python3-pip
 ```
 
-### 步骤 3：安装 Chrome 浏览器和驱动
+### 步骤 3：部署代码
 
-```bash
-# 安装 Chrome
-wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-sudo dpkg -i google-chrome-stable_current_amd64.deb
-sudo apt-get install -f -y
-
-# 安装 ChromeDriver
-sudo apt install -y chromium-chromedriver
-```
-
-### 步骤 4：部署代码
+> 爬虫通过后端 API 获取数据(见 `api_client.py`),**无需安装 Chrome / ChromeDriver**。
 
 ```bash
 # 创建目录
@@ -185,7 +175,7 @@ git clone <你的仓库地址> .
 # scp -r /本地路径/* user@服务器 IP:/opt/qd-crawler/
 ```
 
-### 步骤 5：创建虚拟环境
+### 步骤 4：创建虚拟环境
 
 ```bash
 cd /opt/qd-crawler
@@ -194,14 +184,14 @@ source venv/bin/activate
 pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
-### 步骤 6：配置环境变量
+### 步骤 5：配置环境变量
 
 ```bash
 cp .env.example .env
 nano .env  # 编辑配置
 ```
 
-### 步骤 7：创建系统服务（Systemd）
+### 步骤 6：创建系统服务（Systemd）
 
 创建服务文件：
 ```bash
@@ -258,7 +248,7 @@ sudo systemctl status qd-crawler.timer
 sudo journalctl -u qd-crawler.service
 ```
 
-### 步骤 8：配置 Cron（替代方案）
+### 步骤 7：配置 Cron（替代方案）
 
 ```bash
 crontab -e

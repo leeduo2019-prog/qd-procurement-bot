@@ -194,16 +194,20 @@ sudo bash setup_linux_systemd.sh
 ## 项目结构
 
 ```
-qd-procurement-crawler/
+qd-procurement-bot/
 ├── main.py                 # 主程序入口
-├── crawler.py              # 爬虫核心逻辑
-├── dingtalk_notifier.py    # 钉钉推送模块
+├── crawler.py              # 爬虫编排(分页/匹配/去重)
+├── api_client.py           # 后端 API 客户端(POST site-info/page)
+├── notice_parser.py        # API record -> notice dict 映射
+├── store.py                # SQLite 去重存储
+├── dingtalk_notifier.py     # 钉钉推送模块
 ├── requirements.txt        # Python 依赖
 ├── .env.example            # 环境变量模板
 ├── .env                    # 实际配置（需自行创建）
 ├── README.md               # 本文件
-├── setup_windows_task.bat  # Windows 定时任务配置
-└── setup_linux_cron.sh     # Linux Cron 配置
+├── SYSTEM_ARCHITECTURE.md  # 系统架构详解
+├── tests/                  # pytest 测试(mock 隔离,不依赖网络)
+└── .github/workflows/      # GitHub Actions 定时任务
 ```
 
 ## 自定义配置
@@ -237,24 +241,21 @@ KEYWORDS=造价，审计，预算，决算，结算，招标，采购
 
 ### 2. 爬虫无法获取数据
 
-**原因：** 网站结构变化或网络问题
+**原因：** 后端 API 变更或被 WAF 拦截
 
 **解决：**
-- 检查网络连接
-- 查看目标网站是否可访问
-- 可能需要调整 `crawler.py` 中的页面元素选择器
+- 检查网络连接,确认 `http://zfcg.qingdao.gov.cn:58060` 可访问
+- 查看日志是否出现 403(WAF 拦截):若 UA 失效,更新 `api_client.DEFAULT_HEADERS` 的 User-Agent
+- 确认分类码 `colCode=0303`(采购公告)仍有效;栏目结构变更可参考 `SYSTEM_ARCHITECTURE.md` 重新核对
 
-### 3. Chrome 驱动下载失败
+### 3. 钉钉推送失败但爬取正常
 
-**原因：** 网络问题或 Chrome 版本不匹配
+**原因：** Webhook 地址错误或未配置加签密钥
 
 **解决：**
-```bash
-# 手动下载 Chrome 驱动
-# 访问：https://chromedriver.chromium.org/downloads
-# 下载与 Chrome 版本匹配的驱动
-# 放到系统 PATH 或项目目录下
-```
+- 检查 `.env` 中的 `DINGTALK_WEBHOOK` 是否正确
+- 确认钉钉群机器人已启用
+- 如配置了加签，检查 `DINGTALK_SECRET` 是否正确
 
 ### 4. 如何更改钉钉群？
 
@@ -270,10 +271,11 @@ KEYWORDS=造价，审计，预算，决算，结算，招标，采购
 ## 技术栈
 
 - **Python 3.8+**
-- **Selenium** - 浏览器自动化
-- **BeautifulSoup4** - HTML 解析
-- **webdriver-manager** - Chrome 驱动管理
+- **requests** - 直接调用后端 REST API 获取公告数据
 - **python-dotenv** - 环境变量管理
+- **SQLite** - 公告去重存储
+
+> 爬虫不使用浏览器。青岛政府采购网是 Vue 单页应用,数据来自后端 API(`http://zfcg.qingdao.gov.cn:58060`),爬虫直接调用该 API,无需 Chrome / ChromeDriver。
 
 ## 许可证
 

@@ -48,17 +48,11 @@ echo "============================================================"
 if [ "$SYSTEM" = "debian" ]; then
     apt update
     apt install -y python3 python3-pip python3-venv wget curl
-    # 安装 Chrome
-    wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-    dpkg -i google-chrome-stable_current_amd64.deb || apt-get install -f -y
-    rm -f google-chrome-stable_current_amd64.deb
-    # 安装 ChromeDriver
-    apt install -y chromium-chromedriver
 elif [ "$SYSTEM" = "redhat" ]; then
     yum install -y python3 python3-pip wget curl
-    # 安装 Chromium
-    yum install -y chromium chromium-chromedriver
 fi
+
+# 注:爬虫通过后端 API 获取数据(见 api_client.py),无需 Chrome/ChromeDriver。
 
 echo -e "${GREEN}[完成] 系统依赖安装完成${NC}"
 
