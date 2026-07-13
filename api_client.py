@@ -11,11 +11,18 @@
 """
 
 import logging
+import socket
 from typing import Dict, Optional
 
 import requests
+import urllib3.util.connection as urllib3_cn
 
 logger = logging.getLogger("qd_crawler")
+
+# 强制 IPv4:目标主机有 AAAA 记录,而部分网络(如 GitHub Actions runner)
+# 无 IPv6 路由,会得到 ENETUNREACH (Errno 101)。强制 AF_INET 规避之。
+# (Chrome 用 happy-eyeballs 自动回退 IPv4,故旧 Selenium 方案未触发此问题。)
+urllib3_cn.allowed_gai_family = lambda: socket.AF_INET
 
 API_BASE = "http://zfcg.qingdao.gov.cn:58060"
 PAGE_ENDPOINT = "/api/siteservice/free/qd/site-info/page"

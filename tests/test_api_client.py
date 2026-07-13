@@ -6,6 +6,7 @@ Run with: pytest tests/test_api_client.py
 
 import json
 import os
+import socket
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -118,3 +119,12 @@ class TestFetchPageErrors:
         mock_post.side_effect = requests.exceptions.RequestException("network down")
         with pytest.raises(requests.exceptions.RequestException):
             api_client.fetch_page("0303", "city")
+
+
+class TestForceIPv4:
+    """The host has AAAA records; networks without IPv6 routing (e.g. GitHub
+    Actions runners) hit ENETUNREACH. api_client must force IPv4."""
+
+    def test_allowed_gai_family_is_ipv4(self):
+        import urllib3.util.connection as urllib3_cn
+        assert urllib3_cn.allowed_gai_family() == socket.AF_INET
